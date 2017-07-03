@@ -2,5 +2,16 @@
 name = "rust_snmp"
 version = "0.1.0"
 authors = ["Stian Soltvedt <soltvedt.stian@gmail.com>"]
+repository = "https://github.com/stisol/rust_snmp"
+homepage = "https://github.com/stisol/rust_snmp"
+license = "MIT"
+readme = "README.md"
+documentation = "https://github.com/stisol/rust_snmp"
+description = "A SNMP client written in Rust."
+
+[lib]
+name="rust_snmp"
+test = true
+plugin = false
 
 [dependencies]
