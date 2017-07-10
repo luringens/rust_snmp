@@ -71,15 +71,106 @@ pub mod snmpv3 {
         buf[2] = 0x02; // Integer
         buf[3] = 0x01; // Length
         buf[4] = 0x03; // SNMP version
-        
-        buf[5] = 0x02; // Integer type
-        buf[6] = 0x04; // Length
-        buf[7] = 0x00; // SNMP Request ID
 
-        buf[5] = 0x02; // Integer type
-        buf[6] = 0x08; // Length
-        buf[7] = 0x04; // Message Max Size
-        buf[8] = 0x00;
+        buf[5] = 0x30; // Sequence
+        buf[6] = 0x11; // Length
+
+        buf[7] = 0x02; // Integer
+        buf[8] = 0x04; // Length
+        buf[9] = 0x01; // Message ID
+        buf[10] = 0x11;
+        buf[11] = 0x41;
+        buf[12] = 0x0F;
+
+        buf[13] = 0x02; // Integer
+        buf[14] = 0x03; // Length
+        buf[15] = 0x00; // Max message size
+        buf[16] = 0xFF;
+        buf[17] = 0xE3;
+
+        buf[18] = 0x04; // Octet
+        buf[19] = 0x01; // Length
+        buf[20] = 0b0000_0100; // Reportable, not encrypted or authenticated
+
+        buf[21] = 0x02; // Integer
+        buf[22] = 0x01; // Length
+        buf[23] = 0x03; // USM
+
+        buf[21] = 0x04; // Octet
+        buf[22] = 0x10; // Length
+        buf[23] = 0x03; // USM
+        
+        buf[21] = 0x02; // Integer
+        buf[22] = 0x10; // Length
+        buf[23] = 0x30; // Engine ID
+        buf[24] = 0x0E;
+        buf[25] = 0x04;
+        buf[26] = 0x00;
+
+        buf[27] = 0x02; // Integer
+        buf[28] = 0x01; // Length
+        buf[29] = 0x00; // Authoritative Engine Boots
+
+        buf[27] = 0x02; // Integer
+        buf[28] = 0x01; // Length
+        buf[29] = 0x00; // Authoritative Engine Time
+        
+        // Username
+        buf[28] = 0x04; // Octet
+        buf[29] = 0x00; // Length
+        
+        // Authentication Parameters
+        buf[28] = 0x04; // Octet
+        buf[29] = 0x00; // Length
+        
+        // Privacy Parameters
+        buf[28] = 0x04; // Octet
+        buf[29] = 0x00; // Length
+        
+        buf[30] = 0x30; // Sequence
+        buf[31] = 0x21; // Length
+        
+        // Context Engine ID
+        buf[32] = 0x04; // Octet
+        buf[33] = 0x0D; // Length
+        buf[34] = 0x80; // Conformance: SNMPv3
+        buf[35] = 0x00; // ID Net-SNMP
+        buf[36] = 0x1F;
+        buf[37] = 0x88;
+        buf[38] = 0x80; // Net-SNMP Random
+        buf[39] = 0x59; // Engine ID data
+        buf[40] = 0xDC;
+        buf[41] = 0x48;
+        buf[42] = 0x61;
+        buf[43] = 0x45; // Creation time
+        buf[44] = 0xA2;
+        buf[45] = 0x63;
+        buf[46] = 0x22;
+
+        // Context name
+        buf[47] = 0x04; // Octet 
+        buf[48] = 0x00; // Length
+
+        buf[49] = 0xA0; // GetRequest PDU
+        buf[50] = 0x0E; // Length
+
+        buf[51] = 0x02; // Integer
+        buf[52] = 0x04; // Length
+        buf[53] = 0x2C; // Request ID
+        buf[54] = 0x18;
+        buf[55] = 0x0D;
+        buf[56] = 0xBB;
+
+        buf[57] = 0x02; // Integer
+        buf[58] = 0x01; // Length
+        buf[59] = 0x00; // Error status
+        
+        buf[60] = 0x02; // Integer
+        buf[61] = 0x01; // Length
+        buf[62] = 0x00; // Error ID
+
+        // Variable bindings
+        buf[63] = 0x30; // Sequence
+        buf[64] = 0x00; // Length
     }
 }
-
