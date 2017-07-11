@@ -1,6 +1,5 @@
-use byteorder::{LittleEndian, ByteOrder};
+use byteorder::{BigEndian, ByteOrder};
 use std::io;
-use std::io::Write;
 
 /// Enum containing the various SNMP datatypes.
 #[derive(Debug, Clone)]
@@ -56,7 +55,7 @@ pub fn extract_value(data: &[u8]) -> Result<SnmpType, SnmpError> {
 
 fn extract_integer(data: &[u8]) -> Result<SnmpType, SnmpError>{
     if data.len() > 8 || data.len() < 1 { return Err(SnmpError::ParsingError) };
-    let value = LittleEndian::read_int(data, data.len());
+    let value = BigEndian::read_int(data, data.len());
     Ok(SnmpType::SnmpInteger(value))
 }
 
@@ -70,21 +69,21 @@ fn extract_string(data: &[u8]) -> Result<SnmpType, SnmpError>{
 pub fn write_i32(mut buf: &mut [u8], value: i32) -> usize {
     buf[0] = 0x02; // Datatype for integer
     buf[1] = 0x04; // Length of an i32
-    LittleEndian::write_i32(&mut buf, value);
+    BigEndian::write_i32(&mut buf[2..], value);
     6
 }
 
 pub fn write_i24(mut buf: &mut [u8], value: i32) -> usize {
     buf[0] = 0x02; // Datatype for integer
     buf[1] = 0x03; // Length of an i24
-    LittleEndian::write_i24(&mut buf, value);
+    BigEndian::write_i24(&mut buf[2..], value);
     5
 }
 
 pub fn write_i16(mut buf: &mut [u8], value: i16) -> usize {
     buf[0] = 0x02; // Datatype for integer
     buf[1] = 0x02; // Length of an i16
-    LittleEndian::write_i16(&mut buf, value);
+    BigEndian::write_i16(&mut buf[2..], value);
     4
 }
 
@@ -98,8 +97,18 @@ pub fn write_u8(mut buf: &mut [u8], value: u8) -> usize {
 pub fn write_octet_string(mut buf: &mut [u8], value: &[u8]) -> usize {
     buf[0] = 0x04;        // Datatype for octet strings
     buf[1] = value.len() as u8; // Length of the octet
-    if value.len() != 01 {
-        (&mut buf[2..]).write_all(value).expect("Failed to write octet.");
+    write_raw_octets(&mut buf[2..], &value) + 2
+}
+
+pub fn write_raw_octets(mut buf: &mut [u8], value: &[u8]) -> usize {
+    for i in 0..value.len() {
+        buf[i] = value[i];
     }
-    value.len() + 2
+    value.len()
+}
+
+pub fn write_null(mut buf: &mut [u8]) -> usize {
+    buf[0] = 0x05; // Datatype for null
+    buf[1] = 0x00;
+    2
 }
