@@ -4,34 +4,18 @@
        unsafe_code,
        unstable_features,
        unused_import_braces, unused_qualifications)]
+#![allow(dead_code)]
 
 //! Contains functions and structs for sending and receiving SNMP messages.
-use std::net::UdpSocket;
-use std::{io, time};
-
-/// Various errors that can occur.
-#[derive(Debug)]
-pub enum SnmpError {
-    /// The packet is too short to parse.
-    PacketTooShort,
-    /// The type specified in the packet is invalid.
-    InvalidType,
-    /// The packet could not be parsed in the wanted manner.
-    ParsingError,
-    /// An IO error occured when sending or receiving the packets.
-    Io(io::Error),
-}
-
-impl From<io::Error> for SnmpError {
-    fn from(error: io::Error) -> Self {
-        SnmpError::Io(error)
-    }
-}
+extern crate byteorder;
+//use std::net::UdpSocket;
+//use std::{io, time};
+mod snmpv1;
+mod types;
 
 /// Contains functions and structs for sending and receiving SNMPv3 messages.
 pub mod snmpv3 {
-    use super::*;
-
+    use types;
     /// Sends a SMTPv3 message and returns the reply or an error specifiying what went wrong.
     ///
     /// #Examples
@@ -68,109 +52,87 @@ pub mod snmpv3 {
         buf[0] = 0x30;
         buf[1] = (snmplen - 2) as u8;
 
-        buf[2] = 0x02; // Integer
-        buf[3] = 0x01; // Length
-        buf[4] = 0x03; // SNMP version
+        // SNMP version
+        let mut index = 2;
+        index += types::write_u8(&mut buf[index..], 0x03);
 
-        buf[5] = 0x30; // Sequence
-        buf[6] = 0x11; // Length
+        /*
+        buf[index] = 0x30; // Sequence
+        buf[index+1] = 0x11; // Length
+        index += 2;
+        */
 
-        buf[7] = 0x02; // Integer
-        buf[8] = 0x04; // Length
-        buf[9] = 0x01; // Message ID
-        buf[10] = 0x11;
-        buf[11] = 0x41;
-        buf[12] = 0x0F;
-
-        buf[13] = 0x02; // Integer
-        buf[14] = 0x03; // Length
-        buf[15] = 0x00; // Max message size
-        buf[16] = 0xFF;
-        buf[17] = 0xE3;
-
-        buf[18] = 0x04; // Octet
-        buf[19] = 0x01; // Length
-        buf[20] = 0b0000_0100; // Reportable, not encrypted or authenticated
-
-        buf[21] = 0x02; // Integer
-        buf[22] = 0x01; // Length
-        buf[23] = 0x03; // USM
-
-        buf[21] = 0x04; // Octet
-        buf[22] = 0x10; // Length
-        buf[23] = 0x03; // USM
+        // Message ID
+        index += types::write_i32(&mut buf[index..], 0x0BEEEEF0);
         
-        buf[21] = 0x02; // Integer
-        buf[22] = 0x10; // Length
-        buf[23] = 0x30; // Engine ID
-        buf[24] = 0x0E;
-        buf[25] = 0x04;
-        buf[26] = 0x00;
+        // Max message size
+        index += types::write_i32(&mut buf[index..], 0x00FFE3);
 
-        buf[27] = 0x02; // Integer
-        buf[28] = 0x01; // Length
-        buf[29] = 0x00; // Authoritative Engine Boots
+        // Message flags: reportable, not encrypted or authenticated
+        index += types::write_octet_string(&mut buf[index..], &[0b0000_0100]);
+        
+        // Security model
+        index += types::write_u8(&mut buf[index..], 0x03);
 
-        buf[27] = 0x02; // Integer
-        buf[28] = 0x01; // Length
-        buf[29] = 0x00; // Authoritative Engine Time
+        // Security parameters
+        index += types::write_octet_string(&mut buf[index..], &[0x03]);
+        
+        // Engine ID
+        index += types::write_i32(&mut buf[index..], 0x300E0400);
+
+        // Authoritative Engine Boots
+        index += types::write_u8(&mut buf[index..], 0x00);
+
+        // Authoritative Engine Time
+        index += types::write_u8(&mut buf[index..], 0x00);
         
         // Username
-        buf[28] = 0x04; // Octet
-        buf[29] = 0x00; // Length
+        index += types::write_octet_string(&mut buf[index..], &[]);
         
         // Authentication Parameters
-        buf[28] = 0x04; // Octet
-        buf[29] = 0x00; // Length
+        index += types::write_octet_string(&mut buf[index..], &[]);
         
         // Privacy Parameters
-        buf[28] = 0x04; // Octet
-        buf[29] = 0x00; // Length
+        index += types::write_octet_string(&mut buf[index..], &[]);
         
-        buf[30] = 0x30; // Sequence
-        buf[31] = 0x21; // Length
+        // Start sequence
+        buf[index]   = 0x30; // Sequence
+        buf[index+1] = 0x21; // Length
+        index += 2;
         
         // Context Engine ID
-        buf[32] = 0x04; // Octet
-        buf[33] = 0x0D; // Length
-        buf[34] = 0x80; // Conformance: SNMPv3
-        buf[35] = 0x00; // ID Net-SNMP
-        buf[36] = 0x1F;
-        buf[37] = 0x88;
-        buf[38] = 0x80; // Net-SNMP Random
-        buf[39] = 0x59; // Engine ID data
-        buf[40] = 0xDC;
-        buf[41] = 0x48;
-        buf[42] = 0x61;
-        buf[43] = 0x45; // Creation time
-        buf[44] = 0xA2;
-        buf[45] = 0x63;
-        buf[46] = 0x22;
+        buf[index] = 0x04; // Octet
+        buf[index+1] = 0x0D; // Length
+        buf[index+2] = 0x80; // Conformance: SNMPv3
+        buf[index+3] = 0x00; // ID Net-SNMP
+        buf[index+4] = 0x1F;
+        buf[index+5] = 0x88;
+        buf[index+6] = 0x80; // Net-SNMP Random
+        buf[index+7] = 0x59; // Engine ID data
+        buf[index+8] = 0xDC;
+        buf[index+9] = 0x48;
+        buf[index+10] = 0x61;
+        buf[index+11] = 0x45; // Creation time
+        buf[index+12] = 0xA2;
+        buf[index+13] = 0x63;
+        buf[index+14] = 0x22;
+        index += 17;
 
         // Context name
-        buf[47] = 0x04; // Octet 
-        buf[48] = 0x00; // Length
+        index += types::write_octet_string(&mut buf[index..], &[]);
 
-        buf[49] = 0xA0; // GetRequest PDU
-        buf[50] = 0x0E; // Length
+        buf[index]   = 0xA0; // GetRequest PDU
+        buf[index+1] = 0x0E; // Length
 
-        buf[51] = 0x02; // Integer
-        buf[52] = 0x04; // Length
-        buf[53] = 0x2C; // Request ID
-        buf[54] = 0x18;
-        buf[55] = 0x0D;
-        buf[56] = 0xBB;
-
-        buf[57] = 0x02; // Integer
-        buf[58] = 0x01; // Length
-        buf[59] = 0x00; // Error status
+        // Request ID
+        index += types::write_i32(&mut buf[index..], 0x2C180DBB);
         
-        buf[60] = 0x02; // Integer
-        buf[61] = 0x01; // Length
-        buf[62] = 0x00; // Error ID
+        // Error status and ID
+        index += types::write_u8(&mut buf[index..], 0x00);
+        index += types::write_u8(&mut buf[index..], 0x00);
 
         // Variable bindings
-        buf[63] = 0x30; // Sequence
-        buf[64] = 0x00; // Length
+        buf[index+3] = 0x30; // Sequence
+        buf[index+4] = 0x00; // Length
     }
 }

@@ -15,3 +15,4 @@ test = true
 plugin = false
 
 [dependencies]
+byteorder = "1.1.0"

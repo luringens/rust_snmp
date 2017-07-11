@@ -1,6 +1,27 @@
 /// Contains functions and structs for sending and receiving SNMPv1 messages.
 pub mod snmpv1 {
-    use super::*;
+
+    use std::net::UdpSocket;
+    use std::{io, time};
+
+    /// Various errors that can occur.
+    #[derive(Debug)]
+    pub enum SnmpError {
+        /// The packet is too short to parse.
+        PacketTooShort,
+        /// The type specified in the packet is invalid.
+        InvalidType,
+        /// The packet could not be parsed in the wanted manner.
+        ParsingError,
+        /// An IO error occured when sending or receiving the packets.
+        Io(io::Error),
+    }
+
+    impl From<io::Error> for SnmpError {
+        fn from(error: io::Error) -> Self {
+            SnmpError::Io(error)
+        }
+    }
 
     /// Contains a SNMP response and some extracted metadata from it.
     #[derive(Debug)]
