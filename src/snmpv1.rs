@@ -3,44 +3,50 @@ use std::net::UdpSocket;
 use std::{io, time};
 use types::*;
 use traits::*;
+use rand;
 
 // Contains a SNMP response and some extracted metadata from it.
 #[derive(Debug)]
 pub struct Message {
     packet: Vec<u8>,
-    datatype: MessageDataType,
-    datalength: usize,
-    datastart: usize,
+    community: String,
+    data: SnmpType
 }
 
-/// Enum describing the various SNMP datatypes.
-#[derive(Debug, Clone, Copy)]
-pub enum MessageDataType {
-    /// An integer.
-    SnmpInteger,
-    /// An octet string.
-    SnmpString,
-    /// Null.
-    SnmpNull,
-    /// Another object ID.
-    SnmpObjectID,
-    /// A sequence of some sort
-    SnmpSequence,
-}
-
-/// Holds a SNMPv1 packet, and has some handy functions for parsing the contents.
+/// Holds and parses SNMPv1 packets.
 impl Message {
     fn from_packet(packet: &[u8]) -> Result<Self, SnmpError> {
-        if packet.len() < 26 {
+        // Confirm packet is as long as it needs to be
+        if packet.len() < 2 || packet.len() - 1 != packet[1] as usize {
             return Err(SnmpError::PacketTooShort);
-        };
+        }
 
-        let commlength = packet[6] as usize;
-        if packet.len() < 25 + commlength {
-            return Err(SnmpError::PacketTooShort);
+        // Confirm first bit is the SNMP flag
+        if packet[0] != 0x30 {
+            return Err(SnmpError::ParsingError);
+        }
+
+        let mut iterator = packet.iter();
+
+        // Confirm the protocol is SNMPv1
+        let mut index = 2;
+        let (protocol, offset) = extract_value(&packet[index..])?;
+        index += offset;
+        match protocol {
+            SnmpType::SnmpInteger(i) => if i != 0 { return Err(SnmpError::ParsingError); },
+            _ => return Err(SnmpError::ParsingError),
+        };
+        
+        // Get community
+        let (community, offset) = extract_value(&packet[index..])?;
+        index += offset;
+        let community = match community {
+            SnmpType::SnmpString(s) => s,
+            _ => return Err(SnmpError::ParsingError),
         };
 
         let miblength = packet[23 + commlength] as usize;
+        
         if packet.len() < 25 + commlength + miblength {
             return Err(SnmpError::PacketTooShort);
         };
@@ -52,20 +58,18 @@ impl Message {
             return Err(SnmpError::PacketTooShort);
         };
 
+        let data = packet[datastart..datastart + datalength].to_vec();
         let datatype = match datatype {
-            0x02 => MessageDataType::SnmpInteger,
-            0x04 => MessageDataType::SnmpString,
-            0x05 => MessageDataType::SnmpNull,
-            0x06 => MessageDataType::SnmpObjectID,
-            0x30 => MessageDataType::SnmpSequence,
+            0x02 => SnmpType::SnmpInteger(i64::decode_snmp(&data)?),
+            0x04 => SnmpType::SnmpString(String::decode_snmp(&data)?),
+            0x05 => SnmpType::SnmpNull,
             _ => return Err(SnmpError::InvalidType),
         };
 
         Ok(Message {
             packet: packet.to_vec(),
-            datatype: datatype,
-            datalength: datalength,
-            datastart: datastart,
+            community: community,
+            data: datatype,
         })
     }
 
@@ -74,125 +78,128 @@ impl Message {
         &self.packet
     }
 
-    /// Returns the data part of the packet.
-    pub fn data(&self) -> &[u8] {
-        &self.packet[self.datastart..self.datalength]
-    }
-
     /// Parses the data of the packet as a utf8 string.
-    pub fn as_string(&self) -> Result<String, SnmpError> {
-        match String::from_utf8(self.packet[self.datastart..(self.datastart +
-                                                                self.datalength)]
-            .to_vec()) {
-            Ok(s) => Ok(s),
-            Err(_) => Err(SnmpError::ParsingError),
+    pub fn to_string(&self) -> Result<String, SnmpError> {
+        match self.data {
+            SnmpType::SnmpInteger(ref i) => Ok((*i).to_string()),
+            SnmpType::SnmpString(ref s) => Ok(s.clone()),
+            _ => Err(SnmpError::InvalidType),
         }
     }
 
     /// If the message is a SnmpInteger, parses it and returns the number.
-    pub fn as_int(&self) -> Result<i32, SnmpError> {
-        match self.datatype {
-            MessageDataType::SnmpInteger => {
-                // The value may by a multi-byte integer, so each byte
-                // may have to be shifted to the higher byte order.
-                let mut value: i32 = 0;
-                for i in self.datalength..0 {
-                    value = (value * 128) +
-                            self.packet[self.datastart + self.datalength - i] as i32;
-                }
-                Ok(value)
-            }
+    pub fn to_int(&self) -> Result<i64, SnmpError> {
+        match self.data {
+            SnmpType::SnmpInteger(ref i) => Ok(*i),
             _ => Err(SnmpError::InvalidType),
         }
     }
 }
 
-/// Sends a SMTPv1 message and returns the reply or an error specifiying what went wrong.
-///
-/// #Examples
-/// ```
-/// //let answer = rust_snmp::snmpv1::smtpv1_send("demo.snmplabs.com:161",
-///                                           "public",
-///                                           &[1, 3, 6, 1, 2, 1, 1, 5, 0])
-///     .unwrap();
-/// let answer = answer.as_string().unwrap();
-/// assert_eq!("monkey5000", answer);
-/// ```
-pub fn smtpv1_send(addr: &str,
-                    community: &str,
-                    mibvals: &[u16])
-                    -> Result<Message, SnmpError> {
-    let socket = UdpSocket::bind("0.0.0.0:0")?;
-    socket.set_read_timeout(Some(time::Duration::from_millis(1000)))?;
-    send(addr, mibvals, community, &socket)?;
-    let mut packet: [u8; 1024] = [0; 1024];
-    let length = receive(&socket, &mut packet)?;
-    let packet = Message::from_packet(&packet[0..length])?;
-    Ok(packet)
+#[derive(Debug)]
+/// Contains fields describing a SNMPv1 request as well as 
+/// functions to send it.
+pub struct Request {
+    pub address: String,
+    pub mibvals: Vec<u16>,
+    pub community: String,
+    pub request_id: u32,
+    pub timeout: u64,
 }
 
-fn receive(socket: &UdpSocket, mut buffer: &mut [u8]) -> Result<usize, SnmpError> {
-    let (amount, _) = socket.recv_from(&mut buffer)?;
-    Ok(amount)
-}
-
-fn send(addr: &str,
-        mibvals: &[u16],
-        community: &str,
-        socket: &UdpSocket)
-        -> Result<usize, io::Error> {
-    let mut buf = Vec::with_capacity(250);
-    let mut mib = Vec::with_capacity(20);
-
-    for mibval in mibvals.iter().skip(2) {
-        if mibval > &127u16 {
-            mib.push((128 + (*mibval / 128)) as u8);
-            mib.push((*mibval - ((*mibval / 128) * 128)) as u8);
-        } else {
-            mib.push(*mibval as u8);
+impl Request {
+    /// Creates a request with only the essential arguments.
+    /// Defaults requestID to a random number, and timeout to 1000ms.
+    pub fn new(address: String, community: String, mibvals: Vec<u16>) -> Request {        
+        Request {
+            address: address,
+            mibvals: mibvals,
+            community: community,
+            request_id: rand::random::<u32>(),
+            timeout: 1000
         }
     }
-    let snmplen = 29 + community.len() + mib.len() + 2 - 1;
 
-    // SNMP sequence start
-    buf.push(0x30);
-    buf.push((snmplen - 2) as u8);
+    /// Sends a SMTPv1 message and returns the reply or an error specifiying what went wrong.
+    ///
+    /// #Examples
+    /// ```
+    /// use rust_snmp::snmpv1::Request;
+    /// let request = Request::new("demo.snmplabs.com:161".to_owned(),
+    ///                                  "public".to_owned(),
+    ///                                  vec![1, 3, 6, 1, 2, 1, 1, 5, 0]);
+    /// let message = request.send().unwrap();
+    /// let host = message.to_string().unwrap();
+    /// assert_eq!("monkey5000", host);
+    /// ```
+    pub fn send(&self) -> Result<Message, SnmpError> {
+        // Bind to any UDP socket, set timeout to avoid hanging.
+        let socket = UdpSocket::bind("0.0.0.0:0")?;
+        socket.set_read_timeout(Some(time::Duration::from_millis(1000)))?;
+        
+        // Create and send packet
+        let sendpacket = self.createpacket()?;
+        socket.send_to(&sendpacket, &self.address)?;
 
-    // SNMP version
-    buf.append(&mut 0x00u8.encode_snmp());
+        // Receive and parse packet
+        let mut receivepacket: [u8; 1024] = [0; 1024];
+        let (length, _) = socket.recv_from(&mut receivepacket)?;
+        // DEBUG TODO REMOVE
+        for i in &receivepacket[0..length] {print!("{:02X} ", i);}
+        Ok(Message::from_packet(&receivepacket[0..length])?)
+    }
 
-    // Community
-    buf.append(&mut community.as_bytes().encode_snmp());
-    
-    // MIB size sequence
-    buf.push(0xA0); // GET request
-    buf.push((19 + mib.len() + 2) as u8); // MIB size
+    fn createpacket(&self) -> Result<Vec<u8>, io::Error> {
+        let mut buf = Vec::with_capacity(250);
+        let mut mib = Vec::with_capacity(20);
 
-    // Request ID
-    buf.append(&mut 0x00000001i32.encode_snmp());
-    
-    // Error status and index
-    buf.append(&mut 0x00u8.encode_snmp());
-    buf.append(&mut 0x00u8.encode_snmp());
+        // Convert MIBs to bytes since each number can be more than one byte big.
+        for mibval in self.mibvals.iter().skip(2) {
+            if mibval > &127u16 {
+                mib.push((128 + (*mibval / 128)) as u8);
+                mib.push((*mibval - ((*mibval / 128) * 128)) as u8);
+            } else {
+                mib.push(*mibval as u8);
+            }
+        }
+        let snmplen = 29 + self.community.len() + mib.len() + 2 - 1;
 
-    // Variable binding
-    buf.push(0x30);                      // Start of sequence
-    buf.push((5 + mib.len() + 2) as u8); // Size
-    buf.push(0x30);                      // Start of sequence
-    buf.push((3 + mib.len() + 2) as u8); // Size
-    buf.push(0x06);                      // Object type
-    buf.push((mib.len() - 1 + 2) as u8); // Size
+        // SNMP sequence start
+        buf.push(0x30);
+        buf.push((snmplen - 2) as u8);
 
-    // MIB
-    buf.push(0x2B);
-    buf.append(&mut mib);
-    /*for i in mib.iter().skip(2) {
-        buf.push(*i);
-    }*/
+        // SNMP version
+        buf.append(&mut 0x00u8.encode_snmp());
 
-    // Terminate with null
-    buf.push(0x05);
-    buf.push(0x00);
+        // Community
+        buf.append(&mut self.community.as_bytes().encode_snmp());
+        
+        // MIB size sequence
+        buf.push(0xA0); // GET request
+        buf.push((19 + mib.len() + 2) as u8); // MIB size
 
-    socket.send_to(&buf, addr)
+        // Request ID
+        buf.append(&mut self.request_id.encode_snmp());
+        
+        // Error status and index
+        buf.append(&mut 0x00u8.encode_snmp());
+        buf.append(&mut 0x00u8.encode_snmp());
+
+        // Variable binding
+        buf.push(0x30);                      // Start of sequence
+        buf.push((5 + mib.len() + 2) as u8); // Size
+        buf.push(0x30);                      // Start of sequence
+        buf.push((3 + mib.len() + 2) as u8); // Size
+        buf.push(0x06);                      // Object type
+        buf.push((mib.len() - 1 + 2) as u8); // Size
+
+        // MIB
+        buf.push(0x2B);
+        buf.append(&mut mib);
+
+        // Terminate with null
+        buf.push(0x05);
+        buf.push(0x00);
+        Ok(buf)
+    }
 }

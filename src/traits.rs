@@ -6,7 +6,7 @@ pub trait EncodeSnmp {
 }
 
 pub trait DecodeSnmp {
-    fn decode_snmp(Vec<u8>) -> Result<Self, SnmpError> where Self: Sized;
+    fn decode_snmp(&[u8]) -> Result<Self, SnmpError> where Self: Sized;
 }
 
 impl EncodeSnmp for u8 {
@@ -47,6 +47,21 @@ impl EncodeSnmp for i32 {
     }    
 }
 
+impl EncodeSnmp for u32 {
+    fn encode_snmp(&self) -> Vec<u8> {
+        let mut values: [u8;4] = [0;4];
+        BigEndian::write_u32(&mut values, *self);
+        vec![
+            0x02, // Integer type
+            0x04, // Length
+            values[0],
+            values[1],
+            values[2],
+            values[3]
+        ]        
+    }    
+}
+
 impl EncodeSnmp for [u8] {
     fn encode_snmp(&self) -> Vec<u8> {
         let mut values = vec![0x04, self.len() as u8];
@@ -56,14 +71,14 @@ impl EncodeSnmp for [u8] {
 }
 
 impl DecodeSnmp for i64 {
-    fn decode_snmp(data: Vec<u8>) -> Result<Self, SnmpError> {
+    fn decode_snmp(data: &[u8]) -> Result<Self, SnmpError> {
         if data.len() > 8 || data.len() < 1 { return Err(SnmpError::ParsingError) };
         Ok(BigEndian::read_int(&data, data.len()))
     }
 }
 
 impl DecodeSnmp for String {
-    fn decode_snmp(data: Vec<u8>) -> Result<Self, SnmpError> {
+    fn decode_snmp(data: &[u8]) -> Result<Self, SnmpError> {
         Ok(String::from_utf8(data.to_vec())?)
     }
 }

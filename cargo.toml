@@ -16,3 +16,4 @@ plugin = false
 
 [dependencies]
 byteorder = "1.1.0"
+rand = "0.3.15"

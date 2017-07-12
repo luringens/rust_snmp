@@ -1,7 +1,13 @@
 use std::io;
 use std::string;
+use traits::*;
 
 /// Enum containing the various SNMP datatypes.
+
+const SNMP_INTEGER_CODE: u8      = 0x02;
+const SNMP_OCTET_STRING_CODE: u8 = 0x04;
+const SNMP_NULL_CODE: u8         = 0x05;
+
 #[derive(Debug, Clone)]
 pub enum SnmpType {
     /// An integer.
@@ -43,18 +49,17 @@ impl From<string::FromUtf8Error> for SnmpError {
     }
 }
 
-/*pub fn extract_value(data: &[u8]) -> Result<SnmpType, SnmpError> {
+pub fn extract_value(data: &[u8]) -> Result<(SnmpType, usize), SnmpError> {
     if data.len() < 2 { return Err(SnmpError::PacketTooShort); }
-    let length   = data[1];
     let datatype = data[0];
+    let length   = data[1];
     if data.len() - 2 < length as usize { return Err(SnmpError::PacketTooShort); }
     
-    match datatype {
-        0x02 => extract_integer(&data[2..]),
-        0x04 => extract_string(&data[2..]),
-        0x05 => Ok(SnmpType::SnmpNull),
-        0x06 => Err(SnmpError::NotYetImplementedError),
-        0x30 => Err(SnmpError::NotYetImplementedError),
+    let datatype = match datatype {
+        0x02 => SnmpType::SnmpInteger(i64::decode_snmp(data)?),
+        0x04 => SnmpType::SnmpString(String::decode_snmp(data)?),
+        0x05 => SnmpType::SnmpNull,
         _ => return Err(SnmpError::InvalidType),
-    }
-}*/
+    };
+    Ok((datatype, length as usize))
+}
