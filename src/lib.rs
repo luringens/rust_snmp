@@ -9,4 +9,5 @@
 //! Contains functions and structs for sending and receiving SNMP messages.
 extern crate byteorder;
 pub mod types;
+pub mod traits;
 pub mod snmpv1;

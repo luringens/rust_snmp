@@ -1,5 +1,5 @@
-use byteorder::{BigEndian, ByteOrder};
 use std::io;
+use std::string;
 
 /// Enum containing the various SNMP datatypes.
 #[derive(Debug, Clone)]
@@ -27,8 +27,8 @@ pub enum SnmpError {
     ParsingError,
     /// An IO error occured when sending or receiving the packets.
     Io(io::Error),
-    /// You've hit a dead end
-    NotYetImplementedError,
+    /// An UTF8 parsing error occured when parsing a string.
+    Utf8(string::FromUtf8Error),
 }
 
 impl From<io::Error> for SnmpError {
@@ -37,7 +37,13 @@ impl From<io::Error> for SnmpError {
     }
 }
 
-pub fn extract_value(data: &[u8]) -> Result<SnmpType, SnmpError> {
+impl From<string::FromUtf8Error> for SnmpError {
+    fn from(error: string::FromUtf8Error) -> Self {
+        SnmpError::Utf8(error)
+    }
+}
+
+/*pub fn extract_value(data: &[u8]) -> Result<SnmpType, SnmpError> {
     if data.len() < 2 { return Err(SnmpError::PacketTooShort); }
     let length   = data[1];
     let datatype = data[0];
@@ -51,64 +57,4 @@ pub fn extract_value(data: &[u8]) -> Result<SnmpType, SnmpError> {
         0x30 => Err(SnmpError::NotYetImplementedError),
         _ => return Err(SnmpError::InvalidType),
     }
-}
-
-fn extract_integer(data: &[u8]) -> Result<SnmpType, SnmpError>{
-    if data.len() > 8 || data.len() < 1 { return Err(SnmpError::ParsingError) };
-    let value = BigEndian::read_int(data, data.len());
-    Ok(SnmpType::SnmpInteger(value))
-}
-
-fn extract_string(data: &[u8]) -> Result<SnmpType, SnmpError>{
-    match String::from_utf8(data.to_vec()) {
-        Ok(s) => Ok(SnmpType::SnmpString(s)),
-        Err(_) => Err(SnmpError::ParsingError),
-    }
-}
-
-pub fn write_i32(mut buf: &mut [u8], value: i32) -> usize {
-    buf[0] = 0x02; // Datatype for integer
-    buf[1] = 0x04; // Length of an i32
-    BigEndian::write_i32(&mut buf[2..], value);
-    6
-}
-
-pub fn write_i24(mut buf: &mut [u8], value: i32) -> usize {
-    buf[0] = 0x02; // Datatype for integer
-    buf[1] = 0x03; // Length of an i24
-    BigEndian::write_i24(&mut buf[2..], value);
-    5
-}
-
-pub fn write_i16(mut buf: &mut [u8], value: i16) -> usize {
-    buf[0] = 0x02; // Datatype for integer
-    buf[1] = 0x02; // Length of an i16
-    BigEndian::write_i16(&mut buf[2..], value);
-    4
-}
-
-pub fn write_u8(mut buf: &mut [u8], value: u8) -> usize {
-    buf[0] = 0x02; // Datatype for integer
-    buf[1] = 0x01; // Length of an u8
-    buf[2] = value;
-    3
-}
-
-pub fn write_octet_string(mut buf: &mut [u8], value: &[u8]) -> usize {
-    buf[0] = 0x04;        // Datatype for octet strings
-    buf[1] = value.len() as u8; // Length of the octet
-    write_raw_octets(&mut buf[2..], &value) + 2
-}
-
-pub fn write_raw_octets(mut buf: &mut [u8], value: &[u8]) -> usize {
-    for i in 0..value.len() {
-        buf[i] = value[i];
-    }
-    value.len()
-}
-
-pub fn write_null(mut buf: &mut [u8]) -> usize {
-    buf[0] = 0x05; // Datatype for null
-    buf[1] = 0x00;
-    2
-}
+}*/
