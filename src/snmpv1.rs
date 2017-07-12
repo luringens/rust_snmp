@@ -8,24 +8,22 @@ use traits::*;
 #[derive(Debug)]
 pub struct Message {
     packet: Vec<u8>,
-    datatype: MessageDataType,
-    datalength: usize,
-    datastart: usize,
+    data: SnmpDataType
 }
 
 /// Enum describing the various SNMP datatypes.
-#[derive(Debug, Clone, Copy)]
-pub enum MessageDataType {
+#[derive(Debug)]
+pub enum SnmpDataType {
     /// An integer.
-    SnmpInteger,
+    SnmpInteger(i64),
     /// An octet string.
-    SnmpString,
+    SnmpString(String),
     /// Null.
     SnmpNull,
-    /// Another object ID.
-    SnmpObjectID,
-    /// A sequence of some sort
-    SnmpSequence,
+    // Another object ID.
+    //SnmpObjectID,
+    // A sequence of some sort
+    //SnmpSequence,
 }
 
 /// Holds a SNMPv1 packet, and has some handy functions for parsing the contents.
@@ -52,20 +50,19 @@ impl Message {
             return Err(SnmpError::PacketTooShort);
         };
 
+        let data = packet[datastart..datastart + datalength].to_vec();
         let datatype = match datatype {
-            0x02 => MessageDataType::SnmpInteger,
-            0x04 => MessageDataType::SnmpString,
-            0x05 => MessageDataType::SnmpNull,
-            0x06 => MessageDataType::SnmpObjectID,
-            0x30 => MessageDataType::SnmpSequence,
+            0x02 => SnmpDataType::SnmpInteger(i64::decode_snmp(data)?),
+            0x04 => SnmpDataType::SnmpString(String::decode_snmp(data)?),
+            0x05 => SnmpDataType::SnmpNull,
+            //0x06 => SnmpDataType::SnmpObjectID,
+            //0x30 => SnmpDataType::SnmpSequence,
             _ => return Err(SnmpError::InvalidType),
         };
 
         Ok(Message {
             packet: packet.to_vec(),
-            datatype: datatype,
-            datalength: datalength,
-            datastart: datastart,
+            data: datatype,
         })
     }
 
@@ -74,34 +71,19 @@ impl Message {
         &self.packet
     }
 
-    /// Returns the data part of the packet.
-    pub fn data(&self) -> &[u8] {
-        &self.packet[self.datastart..self.datalength]
-    }
-
     /// Parses the data of the packet as a utf8 string.
-    pub fn as_string(&self) -> Result<String, SnmpError> {
-        match String::from_utf8(self.packet[self.datastart..(self.datastart +
-                                                                self.datalength)]
-            .to_vec()) {
-            Ok(s) => Ok(s),
-            Err(_) => Err(SnmpError::ParsingError),
+    pub fn to_string(&self) -> Result<String, SnmpError> {
+        match self.data {
+            SnmpDataType::SnmpInteger(ref i) => Ok((*i).to_string()),
+            SnmpDataType::SnmpString(ref s) => Ok(s.clone()),
+            _ => Err(SnmpError::InvalidType),
         }
     }
 
     /// If the message is a SnmpInteger, parses it and returns the number.
-    pub fn as_int(&self) -> Result<i32, SnmpError> {
-        match self.datatype {
-            MessageDataType::SnmpInteger => {
-                // The value may by a multi-byte integer, so each byte
-                // may have to be shifted to the higher byte order.
-                let mut value: i32 = 0;
-                for i in self.datalength..0 {
-                    value = (value * 128) +
-                            self.packet[self.datastart + self.datalength - i] as i32;
-                }
-                Ok(value)
-            }
+    pub fn to_int(&self) -> Result<i64, SnmpError> {
+        match self.data {
+            SnmpDataType::SnmpInteger(ref i) => Ok(*i),
             _ => Err(SnmpError::InvalidType),
         }
     }
@@ -111,11 +93,11 @@ impl Message {
 ///
 /// #Examples
 /// ```
-/// //let answer = rust_snmp::snmpv1::smtpv1_send("demo.snmplabs.com:161",
+/// let answer = rust_snmp::snmpv1::smtpv1_send("demo.snmplabs.com:161",
 ///                                           "public",
 ///                                           &[1, 3, 6, 1, 2, 1, 1, 5, 0])
 ///     .unwrap();
-/// let answer = answer.as_string().unwrap();
+/// let answer = answer.to_string().unwrap();
 /// assert_eq!("monkey5000", answer);
 /// ```
 pub fn smtpv1_send(addr: &str,
