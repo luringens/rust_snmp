@@ -3,9 +3,9 @@
 use std::{io, string, slice};
 use traits::*;
 
-const SNMP_INTEGER_CODE: u8      = 0x02;
+const SNMP_INTEGER_CODE: u8 = 0x02;
 const SNMP_OCTET_STRING_CODE: u8 = 0x04;
-const SNMP_NULL_CODE: u8         = 0x05;
+const SNMP_NULL_CODE: u8 = 0x05;
 
 /// Enum containing the various SNMP datatypes.
 #[derive(Debug, Clone)]
@@ -17,9 +17,8 @@ pub enum SnmpType {
     /// Null.
     SnmpNull,
     /// An OID.
-    SnmpObjectID(Vec<u8>),
-    // A sequence of some sort
-    //SnmpSequence(Vec<SnmpType>),
+    SnmpObjectID(Vec<u8>), /* A sequence of some sort
+                            * SnmpSequence(Vec<SnmpType>), */
 }
 
 /// Various errors that can occur.
@@ -51,9 +50,11 @@ impl From<string::FromUtf8Error> for SnmpError {
     }
 }
 
-pub(crate) fn extract_value(mut data: &mut slice::Iter<u8>) -> Result<SnmpType, SnmpError> {
+pub(crate) fn extract_value(// crate) fn extract_value(// crate) fn extract_value(
+                            mut data: &mut slice::Iter<u8>)
+                            -> Result<SnmpType, SnmpError> {
     let datatype = *data.next().ok_or(SnmpError::PacketTooShort)?;
-    let length   = *data.next().ok_or(SnmpError::PacketTooShort)? as usize;
+    let length = *data.next().ok_or(SnmpError::PacketTooShort)? as usize;
 
     println!();
     println!("Type:   {:00X}", datatype);
@@ -62,7 +63,7 @@ pub(crate) fn extract_value(mut data: &mut slice::Iter<u8>) -> Result<SnmpType, 
     if data.len() < length {
         return Err(SnmpError::PacketTooShort);
     }
-    
+
     let ndata: Vec<_> = data.take(length).map(|i| *i).collect();
     let datatype = match datatype {
         0x02 => SnmpType::SnmpInteger(i64::decode_snmp(&ndata)?),

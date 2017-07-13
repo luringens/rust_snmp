@@ -11,7 +11,7 @@ pub struct Message {
     packet: Vec<u8>,
     community: String,
     response_id: i64,
-    data: SnmpType
+    data: SnmpType,
 }
 
 /// Holds and parses SNMPv1 packets.
@@ -31,10 +31,14 @@ impl Message {
 
         // Confirm the protocol is SNMPv1.
         match extract_value(&mut iterator)? {
-            SnmpType::SnmpInteger(i) => if i != 0 { return Err(SnmpError::ParsingError); },
+            SnmpType::SnmpInteger(i) => {
+                if i != 0 {
+                    return Err(SnmpError::ParsingError);
+                }
+            }
             _ => return Err(SnmpError::ParsingError),
         };
-        
+
         // Get the SNMP community.
         let community = match extract_value(&mut iterator)? {
             SnmpType::SnmpString(s) => s,
@@ -48,26 +52,30 @@ impl Message {
 
         // Get PDU length.
         iterator.next().ok_or(SnmpError::ParsingError)?;
-        
+
         // Get Request ID.
         let response_id = match extract_value(&mut iterator)? {
             SnmpType::SnmpInteger(i) => i,
             _ => return Err(SnmpError::ParsingError),
         };
-        
+
         // Get error type.
         match extract_value(&mut iterator)? {
-            SnmpType::SnmpInteger(i) => if i != 0 {
-                return Err(SnmpError::ResponseError(i));
-            },
+            SnmpType::SnmpInteger(i) => {
+                if i != 0 {
+                    return Err(SnmpError::ResponseError(i));
+                }
+            }
             _ => return Err(SnmpError::ParsingError),
         };
 
         // Get error index.
         match extract_value(&mut iterator)? {
-            SnmpType::SnmpInteger(i) => if i != 0 {
-                return Err(SnmpError::ResponseError(i));
-            },
+            SnmpType::SnmpInteger(i) => {
+                if i != 0 {
+                    return Err(SnmpError::ResponseError(i));
+                }
+            }
             _ => return Err(SnmpError::ParsingError),
         };
 
@@ -86,7 +94,7 @@ impl Message {
 
         // With an associated length...
         iterator.next().ok_or(SnmpError::ParsingError)?;
-        
+
         // Get the OID...
         match extract_value(&mut iterator)? {
             SnmpType::SnmpObjectID(o) => o,
@@ -95,7 +103,7 @@ impl Message {
 
         // And finally, get the actual data.
         let datatype = extract_value(&mut iterator)?;
-        
+
         Ok(Message {
             packet: packet.to_vec(),
             community: community,
@@ -150,13 +158,13 @@ pub struct Request {
 impl Request {
     /// Creates a request with only the essential arguments.
     /// Defaults requestID to a random number, and timeout to 1000ms.
-    pub fn new(address: String, community: String, mibvals: Vec<u16>) -> Request {        
+    pub fn new(address: String, community: String, mibvals: Vec<u16>) -> Request {
         Request {
             address: address,
             mibvals: mibvals,
             community: community,
             request_id: rand::random::<u32>(),
-            timeout: 1000
+            timeout: 1000,
         }
     }
 
@@ -176,7 +184,7 @@ impl Request {
         // Bind to any UDP socket, set timeout to avoid hanging.
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         socket.set_read_timeout(Some(time::Duration::from_millis(1000)))?;
-        
+
         // Create and send packet
         let sendpacket = self.createpacket()?;
         socket.send_to(&sendpacket, &self.address)?;
@@ -185,7 +193,9 @@ impl Request {
         let mut receivepacket: [u8; 1024] = [0; 1024];
         let (length, _) = socket.recv_from(&mut receivepacket)?;
         // DEBUG TODO REMOVE
-        for i in &receivepacket[0..length] {print!("{:02X} ", i);}
+        for i in &receivepacket[0..length] {
+            print!("{:02X} ", i);
+        }
         Ok(Message::from_packet(&receivepacket[0..length])?)
     }
 
@@ -213,14 +223,14 @@ impl Request {
 
         // Community
         buf.append(&mut self.community.as_bytes().encode_snmp());
-        
+
         // MIB size sequence
         buf.push(0xA0); // GET request
         buf.push((19 + mib.len() + 2) as u8); // MIB size
 
         // Request ID
         buf.append(&mut self.request_id.encode_snmp());
-        
+
         // Error status and index
         buf.append(&mut 0x00u8.encode_snmp());
         buf.append(&mut 0x00u8.encode_snmp());
