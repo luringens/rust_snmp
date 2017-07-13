@@ -1,5 +1,4 @@
-use std::io;
-use std::string;
+use std::{io, string, slice};
 use traits::*;
 
 /// Enum containing the various SNMP datatypes.
@@ -16,8 +15,8 @@ pub enum SnmpType {
     SnmpString(String),
     /// Null.
     SnmpNull,
-    // Another object ID.
-    //SnmpObjectID,
+    /// An OID.
+    SnmpObjectID(Vec<u8>),
     // A sequence of some sort
     //SnmpSequence(Vec<SnmpType>),
 }
@@ -31,6 +30,8 @@ pub enum SnmpError {
     InvalidType,
     /// The packet could not be parsed in the wanted manner.
     ParsingError,
+    /// The SNMP response contained an error
+    ResponseError(i64),
     /// An IO error occured when sending or receiving the packets.
     Io(io::Error),
     /// An UTF8 parsing error occured when parsing a string.
@@ -49,17 +50,27 @@ impl From<string::FromUtf8Error> for SnmpError {
     }
 }
 
-pub fn extract_value(data: &[u8]) -> Result<(SnmpType, usize), SnmpError> {
-    if data.len() < 2 { return Err(SnmpError::PacketTooShort); }
-    let datatype = data[0];
-    let length   = data[1];
-    if data.len() - 2 < length as usize { return Err(SnmpError::PacketTooShort); }
+pub fn extract_value(mut data: &mut slice::Iter<u8>) -> Result<SnmpType, SnmpError> {
+    let datatype = *data.next().ok_or(SnmpError::PacketTooShort)?;
+    let length   = *data.next().ok_or(SnmpError::PacketTooShort)? as usize;
+
+    println!();
+    println!("Type:   {:00X}", datatype);
+    println!("Length: {:00}", length);
+
+    if data.len() < length {
+        return Err(SnmpError::PacketTooShort);
+    }
     
+    let ndata: Vec<_> = data.take(length).map(|i| *i).collect();
     let datatype = match datatype {
-        0x02 => SnmpType::SnmpInteger(i64::decode_snmp(data)?),
-        0x04 => SnmpType::SnmpString(String::decode_snmp(data)?),
+        0x02 => SnmpType::SnmpInteger(i64::decode_snmp(&ndata)?),
+        0x04 => SnmpType::SnmpString(String::decode_snmp(&ndata)?),
         0x05 => SnmpType::SnmpNull,
+        0x06 => SnmpType::SnmpObjectID(ndata),
         _ => return Err(SnmpError::InvalidType),
     };
-    Ok((datatype, length as usize))
+
+    println!("Data: {:?}", datatype);
+    Ok(datatype)
 }

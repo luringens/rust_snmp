@@ -16,56 +16,85 @@ pub struct Message {
 /// Holds and parses SNMPv1 packets.
 impl Message {
     fn from_packet(packet: &[u8]) -> Result<Self, SnmpError> {
-        // Confirm packet is as long as it needs to be
-        if packet.len() < 2 || packet.len() - 1 != packet[1] as usize {
+        // Check that the packet is as long as it needs to be.
+        if packet.len() < 2 || packet.len() - 2 != packet[1] as usize {
             return Err(SnmpError::PacketTooShort);
         }
 
-        // Confirm first bit is the SNMP flag
+        // Confirm that the first bit is the SNMP flag.
         if packet[0] != 0x30 {
             return Err(SnmpError::ParsingError);
         }
 
-        let mut iterator = packet.iter();
+        let mut iterator = packet[2..].iter();
 
-        // Confirm the protocol is SNMPv1
-        let mut index = 2;
-        let (protocol, offset) = extract_value(&packet[index..])?;
-        index += offset;
-        match protocol {
+        // Confirm the protocol is SNMPv1.
+        match extract_value(&mut iterator)? {
             SnmpType::SnmpInteger(i) => if i != 0 { return Err(SnmpError::ParsingError); },
             _ => return Err(SnmpError::ParsingError),
         };
         
-        // Get community
-        let (community, offset) = extract_value(&packet[index..])?;
-        index += offset;
-        let community = match community {
+        // Get the SNMP community.
+        let community = match extract_value(&mut iterator)? {
             SnmpType::SnmpString(s) => s,
             _ => return Err(SnmpError::ParsingError),
         };
 
-        let miblength = packet[23 + commlength] as usize;
+        // Confirm PDU type GetResponse.
+        if *iterator.next().ok_or(SnmpError::ParsingError)? != 0xA2 {
+            return Err(SnmpError::ParsingError);
+        }
+
+        // Get PDU length.
+        iterator.next().ok_or(SnmpError::ParsingError)?;
         
-        if packet.len() < 25 + commlength + miblength {
-            return Err(SnmpError::PacketTooShort);
+        // Get Request ID.
+        match extract_value(&mut iterator)? {
+            SnmpType::SnmpInteger(i) => i,
+            _ => return Err(SnmpError::ParsingError),
+        };
+        
+        // Get error type.
+        match extract_value(&mut iterator)? {
+            SnmpType::SnmpInteger(i) => if i != 0 {
+                return Err(SnmpError::ResponseError(i));
+            },
+            _ => return Err(SnmpError::ParsingError),
         };
 
-        let datatype = packet[24 + commlength + miblength];
-        let datalength = packet[25 + commlength + miblength] as usize;
-        let datastart = 26 + commlength + miblength;
-        if packet.len() < 26 + commlength + miblength + datalength {
-            return Err(SnmpError::PacketTooShort);
+        // Get error index.
+        match extract_value(&mut iterator)? {
+            SnmpType::SnmpInteger(i) => if i != 0 {
+                return Err(SnmpError::ResponseError(i));
+            },
+            _ => return Err(SnmpError::ParsingError),
         };
 
-        let data = packet[datastart..datastart + datalength].to_vec();
-        let datatype = match datatype {
-            0x02 => SnmpType::SnmpInteger(i64::decode_snmp(&data)?),
-            0x04 => SnmpType::SnmpString(String::decode_snmp(&data)?),
-            0x05 => SnmpType::SnmpNull,
-            _ => return Err(SnmpError::InvalidType),
+        // Confirm next byte indicates a sequence.
+        if *iterator.next().ok_or(SnmpError::ParsingError)? != 0x30 {
+            return Err(SnmpError::ParsingError);
+        }
+
+        // Then a length. Not in use as we don't support batch requests.
+        iterator.next().ok_or(SnmpError::ParsingError)?;
+
+        // Then there is another sequence...
+        if *iterator.next().ok_or(SnmpError::ParsingError)? != 0x30 {
+            return Err(SnmpError::ParsingError);
+        }
+
+        // With an associated length...
+        iterator.next().ok_or(SnmpError::ParsingError)?;
+        
+        // Get the OID and data.
+        match extract_value(&mut iterator)? {
+            SnmpType::SnmpObjectID(o) => o,
+            _ => return Err(SnmpError::ParsingError),
         };
 
+        // And finally... Get the actual data.
+        let datatype = extract_value(&mut iterator)?;
+        
         Ok(Message {
             packet: packet.to_vec(),
             community: community,
