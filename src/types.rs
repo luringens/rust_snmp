@@ -1,12 +1,13 @@
+//! Contains various associated types for the library.
+
 use std::{io, string, slice};
 use traits::*;
-
-/// Enum containing the various SNMP datatypes.
 
 const SNMP_INTEGER_CODE: u8      = 0x02;
 const SNMP_OCTET_STRING_CODE: u8 = 0x04;
 const SNMP_NULL_CODE: u8         = 0x05;
 
+/// Enum containing the various SNMP datatypes.
 #[derive(Debug, Clone)]
 pub enum SnmpType {
     /// An integer.
@@ -50,7 +51,7 @@ impl From<string::FromUtf8Error> for SnmpError {
     }
 }
 
-pub fn extract_value(mut data: &mut slice::Iter<u8>) -> Result<SnmpType, SnmpError> {
+pub(crate) fn extract_value(mut data: &mut slice::Iter<u8>) -> Result<SnmpType, SnmpError> {
     let datatype = *data.next().ok_or(SnmpError::PacketTooShort)?;
     let length   = *data.next().ok_or(SnmpError::PacketTooShort)? as usize;
 

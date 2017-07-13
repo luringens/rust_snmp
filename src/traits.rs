@@ -1,11 +1,11 @@
 use byteorder::{BigEndian, ByteOrder};
 use types::*;
 
-pub trait EncodeSnmp {
+pub(crate) trait EncodeSnmp {
     fn encode_snmp(&self) -> Vec<u8>;
 }
 
-pub trait DecodeSnmp {
+pub(crate) trait DecodeSnmp {
     fn decode_snmp(&[u8]) -> Result<Self, SnmpError> where Self: Sized;
 }
 

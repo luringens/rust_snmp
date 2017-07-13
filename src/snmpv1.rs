@@ -5,11 +5,12 @@ use types::*;
 use traits::*;
 use rand;
 
-// Contains a SNMP response and some extracted metadata from it.
+/// Contains a SNMP response and metadata from it.
 #[derive(Debug)]
 pub struct Message {
     packet: Vec<u8>,
     community: String,
+    response_id: i64,
     data: SnmpType
 }
 
@@ -49,7 +50,7 @@ impl Message {
         iterator.next().ok_or(SnmpError::ParsingError)?;
         
         // Get Request ID.
-        match extract_value(&mut iterator)? {
+        let response_id = match extract_value(&mut iterator)? {
             SnmpType::SnmpInteger(i) => i,
             _ => return Err(SnmpError::ParsingError),
         };
@@ -70,7 +71,7 @@ impl Message {
             _ => return Err(SnmpError::ParsingError),
         };
 
-        // Confirm next byte indicates a sequence.
+        // Confirm next byte indicates a sequence of OID's and their values.
         if *iterator.next().ok_or(SnmpError::ParsingError)? != 0x30 {
             return Err(SnmpError::ParsingError);
         }
@@ -78,7 +79,7 @@ impl Message {
         // Then a length. Not in use as we don't support batch requests.
         iterator.next().ok_or(SnmpError::ParsingError)?;
 
-        // Then there is another sequence...
+        // Then there is the sequence for the first (and only) OID.
         if *iterator.next().ok_or(SnmpError::ParsingError)? != 0x30 {
             return Err(SnmpError::ParsingError);
         }
@@ -86,18 +87,19 @@ impl Message {
         // With an associated length...
         iterator.next().ok_or(SnmpError::ParsingError)?;
         
-        // Get the OID and data.
+        // Get the OID...
         match extract_value(&mut iterator)? {
             SnmpType::SnmpObjectID(o) => o,
             _ => return Err(SnmpError::ParsingError),
         };
 
-        // And finally... Get the actual data.
+        // And finally, get the actual data.
         let datatype = extract_value(&mut iterator)?;
         
         Ok(Message {
             packet: packet.to_vec(),
             community: community,
+            response_id: response_id,
             data: datatype,
         })
     }
@@ -105,6 +107,11 @@ impl Message {
     /// Returns the full packet received.
     pub fn packet(&self) -> &[u8] {
         &self.packet
+    }
+
+    /// Returns the data in whatever type it is.
+    pub fn data(&self) -> &SnmpType {
+        &self.data
     }
 
     /// Parses the data of the packet as a utf8 string.
@@ -126,13 +133,17 @@ impl Message {
 }
 
 #[derive(Debug)]
-/// Contains fields describing a SNMPv1 request as well as 
-/// functions to send it.
+/// Contains fields describing a SNMPv1 request as well as functions to send it.
 pub struct Request {
+    /// The address to send the request to.
     pub address: String,
+    /// The MIB to ask for.
     pub mibvals: Vec<u16>,
+    /// The community used to authenticate.
     pub community: String,
+    /// The request ID to provide.
     pub request_id: u32,
+    /// How long to wait for a reply.
     pub timeout: u64,
 }
 
@@ -156,10 +167,10 @@ impl Request {
     /// use rust_snmp::snmpv1::Request;
     /// let request = Request::new("demo.snmplabs.com:161".to_owned(),
     ///                                  "public".to_owned(),
-    ///                                  vec![1, 3, 6, 1, 2, 1, 1, 5, 0]);
+    ///                                  vec![1, 3, 6, 1, 2, 1, 1, 1, 0]);
     /// let message = request.send().unwrap();
     /// let host = message.to_string().unwrap();
-    /// assert_eq!("monkey5000", host);
+    /// assert_eq!("Linux", &host[..5]);
     /// ```
     pub fn send(&self) -> Result<Message, SnmpError> {
         // Bind to any UDP socket, set timeout to avoid hanging.
